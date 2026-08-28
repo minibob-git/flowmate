@@ -1,0 +1,8 @@
+# 本地运行/部署
+.workbuddy/
+.DS_Store
+*.log
+
+# 计划/草稿（仅本机工作笔记，不入公开仓库）
+plans/
+__pycache__/
