@@ -143,6 +143,7 @@ input:checked + .slider:before { transform: translateX(14px); }
       <i class="fa-solid fa-bolt"></i><span>琐事收集</span>
       <span class="ml-auto text-xs text-stone-400" id="quickCount">0</span>
     </button>
+    <div id="futureBadgeList"></div>
     <div class="text-xs text-stone-500 px-2 py-1 mt-2 uppercase tracking-wide">项目</div>
     <div id="projectList" class="flex flex-col gap-1"></div>
     <button class="btn btn-outline btn-sm mt-1" id="btnNewProject">
@@ -207,6 +208,23 @@ input:checked + .slider:before { transform: translateX(14px); }
         </div>
       </div>
       <div>
+        <h3 class="font-medium text-sm mb-2">提醒</h3>
+        <div class="space-y-2 text-xs">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="setRemindEnabled" class="accent-indigo-500 w-4 h-4"> 开启提前提醒
+          </label>
+          <div class="flex items-center gap-2">
+            <label class="text-stone-500">提前</label>
+            <input type="number" min="1" max="240" class="input w-20" id="setRemindLead">
+            <span class="text-stone-500">分钟提醒（默认 20）</span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button class="btn btn-outline btn-sm" id="btnTestRemind"><i class="fa-solid fa-bell"></i>发送测试提醒</button>
+            <span class="text-stone-400">浏览器开着才能提醒（含后台标签页）；完全关闭浏览器后收不到</span>
+          </div>
+        </div>
+      </div>
+      <div>
         <h3 class="font-medium text-sm mb-2">数据</h3>
         <div class="flex flex-wrap gap-2">
           <button class="btn btn-outline btn-sm" id="btnLoadDemo"><i class="fa-solid fa-database"></i>加载演示数据</button>
@@ -219,7 +237,7 @@ input:checked + .slider:before { transform: translateX(14px); }
       <div>
         <h3 class="font-medium text-sm mb-2">关于</h3>
         <div class="text-xs text-stone-500 space-y-1">
-          <div>FlowMate v1.0 — 单文件 SPA，数据存本机</div>
+          <div>FlowMate v1.3 — 单文件 SPA，数据存本机</div>
           <div>参加大工黑客松：赛道1（奇绩创坛） + 赛道4（七牛云）</div>
         </div>
       </div>
@@ -315,10 +333,39 @@ input:checked + .slider:before { transform: translateX(14px); }
         <label class="text-xs font-medium text-stone-500 block mb-1">截止日期 <span class="text-stone-300">（留空 = 无期限）</span></label>
         <input type="date" class="input" id="editTaskDueDate">
       </div>
+      <div>
+        <label class="text-xs font-medium text-stone-500 block mb-1">开始时间 <span class="text-stone-300">（留空 = 不排时段，可用于智能排程）</span></label>
+        <input type="time" class="input" id="editTaskStart">
+      </div>
     </div>
     <div class="border-t p-3 flex justify-end gap-2">
       <button class="btn btn-outline" data-close-modal="taskEditModal">取消</button>
       <button class="btn btn-primary" id="btnEditTaskSave"><i class="fa-solid fa-check"></i>保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== REMIND BANNER ========== -->
+<div id="remindBanner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2 fade-in max-w-[92vw]"></div>
+
+<!-- ========== OVERDUE REVIEW MODAL ========== -->
+<div id="overdueModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-mask">
+  <div class="surface rounded-lg w-[560px] max-w-[92vw] max-h-[90vh] flex flex-col fade-in">
+    <div class="h-12 border-b flex items-center justify-between px-4 shrink-0">
+      <div class="font-semibold"><i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>每日回顾</div>
+      <button class="icon-btn" data-close-modal="overdueModal" id="overdueClose" title="稍后再说"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-4 text-sm shrink-0">
+      <div class="text-stone-600">过去的日子里还有下面这些任务没有确认完成情况。是已经办完了，还是没办需要顺延？</div>
+      <div class="text-xs text-stone-400 mt-1"><span id="overdueCount"></span> 项待确认 · 选择后会立即归位或清理</div>
+    </div>
+    <div class="px-4 pb-4 overflow-y-auto flex-1" id="overdueList"></div>
+    <div class="border-t p-3 flex justify-between items-center shrink-0">
+      <div class="flex gap-2">
+        <button class="btn btn-outline" id="btnOverdueAllDone"><i class="fa-solid fa-circle-check"></i>全部已办完</button>
+        <button class="btn btn-outline" id="btnOverdueAllCarry"><i class="fa-solid fa-arrow-right"></i>全部推到明天</button>
+      </div>
+      <button class="btn btn-outline" data-close-modal="overdueModal" id="overdueSnooze"><i class="fa-solid fa-moon"></i>稍后再说</button>
     </div>
   </div>
 </div>
@@ -405,6 +452,58 @@ const UTILS = {
     d.setDate(d.getDate() + days);
     return d.toISOString().slice(0, 10);
   },
+  toMin(hhmm) {
+    if (!hhmm) return null;
+    const m = String(hhmm).match(/^(\d{1,2}):(\d{1,2})$/);
+    if (!m) return null;
+    return parseInt(m[1]) * 60 + parseInt(m[2]);
+  },
+  fmtMin(min) {
+    const h = Math.floor(min / 60) % 24, m = min % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  },
+  todayLabel() {
+    const d = new Date();
+    const week = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
+    return `${d.getMonth() + 1}月${d.getDate()}日 ${week}`;
+  },
+  /**
+   * 是否过期未完成（用于每日回顾）
+   * 过去日期 + status !== "done"
+   */
+  isOverdue(t) {
+    if (t.status === "done") return false;
+    if (!t.dueDate) return false;
+    return t.dueDate < this.today(0);
+  },
+  /**
+   * 是否保留划线显示（用于24h滑动清理）
+   * 已完成 + 距 completedAt 不足 24h（或者没有 completedAt 字段，按长期已完成处理）
+   */
+  shouldShowStrikeDone(t) {
+    if (t.status !== "done") return false;
+    if (!t.completedAt) return true; // 老数据/长期已完成
+    return (Date.now() - new Date(t.completedAt).getTime()) < 24 * 3600 * 1000;
+  },
+  /**
+   * 已完成 N 小时前（显示"X 小时前完成"用）
+   */
+  hoursAgo(iso) {
+    if (!iso) return null;
+    return Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  },
+  dateLabel(dateStr, refStr) {
+    if (!dateStr) return "";
+    const ref = refStr || this.today(0);
+    const d = new Date(dateStr + "T00:00:00");
+    const refD = new Date(ref + "T00:00:00");
+    const diff = Math.round((d - refD) / 86400000);
+    const week = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
+    if (diff === 1) return "明天 " + week;
+    if (diff === 2) return "后天 " + week;
+    if (diff > 0 && diff <= 6) return week;
+    return `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${week}`;
+  },
   fromNow(d) {
     const diff = Date.now() - new Date(d).getTime();
     const m = Math.floor(diff / 60000);
@@ -474,6 +573,8 @@ const STORE = (() => {
         if (!data.preferences) data.preferences = [];
         if (!data.memoryLogs) data.memoryLogs = [];
         if (!data.settings) data.settings = initSettings();
+        if (data.settings.remindEnabled === undefined) data.settings.remindEnabled = true;
+        if (data.settings.remindLeadMin === undefined) data.settings.remindLeadMin = 20;
         if (!data.projects) data.projects = [];
         if (!data.tasks) data.tasks = [];
       } else {
@@ -500,7 +601,11 @@ const STORE = (() => {
       apiMode: "mock",
       deepseek: { ...CONFIG.DEFAULT_DEEPSEEK },
       lastMode: "quick",
-      lastProjectId: null
+      lastProjectId: null,
+      remindEnabled: true,
+      remindLeadMin: 20,
+      lastOverdueCheckDate: null,
+      lastOverdueCheckAt: null
     };
   }
   function save() {
@@ -510,7 +615,22 @@ const STORE = (() => {
   function get() { return data; }
   function setAll(newData) { data = newData; save(); }
   function reset() { data = defaultData(); save(); }
-  return { load, save, get, setAll, reset };
+  /**
+   * 24h 滑动清理已划线的已完成任务
+   * 把 sweepAt <= now 的任务硬删，避免堆积
+   * 由 REMINDER 的 30s 心跳调用，避免新建定时器
+   */
+  function sweepCompleted() {
+    if (!data) return;
+    const now = Date.now();
+    const before = data.tasks.length;
+    data.tasks = data.tasks.filter(t => {
+      if (!t.sweepAt) return true; // 老数据 / 没有 sweepAt 的不清理
+      return new Date(t.sweepAt).getTime() > now;
+    });
+    if (data.tasks.length !== before) save();
+  }
+  return { load, save, get, setAll, reset, sweepCompleted };
 })();
 
 /* ========== RULES (local rule engine) ========== */
@@ -540,19 +660,64 @@ const RULES = {
         const add = day <= 6 ? (6 - day + 1) : 1;
         dueOffsetDays = add;
       }
+      // 识别 "M月D日"（如 "9月1日交论文"）
+      const mdMatch = p.match(/(\d{1,2})月(\d{1,2})日/);
+      if (mdMatch) {
+        const month = parseInt(mdMatch[1]);
+        const day = parseInt(mdMatch[2]);
+        const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+        let target = new Date(todayD.getFullYear(), month - 1, day);
+        if (target < todayD) target = new Date(todayD.getFullYear() + 1, month - 1, day);
+        dueOffsetDays = Math.round((target - todayD) / 86400000);
+      }
       // 估算时长
       let estimateMin = 30;
       const hourMatch = p.match(/(\d+)\s*小时/);
       const minMatch = p.match(/(\d+)\s*分钟/);
       if (hourMatch) estimateMin = parseInt(hourMatch[1]) * 60;
       else if (minMatch) estimateMin = parseInt(minMatch[1]);
+      // 解析开始时间 / 时间段（如 "9点-11点"、"下午2点"、"19:30"）
+      const tp = RULES.parseTimePart(p);
+      if (tp && tp.estimateMin) estimateMin = tp.estimateMin;
+      // 推断日期：有时间但没有明天/后天等词 → 默认今天
+      if (dueOffsetDays == null && tp && tp.today) dueOffsetDays = 0;
       return {
         title: p,
         priority,
         dueDate: dueOffsetDays != null ? UTILS.today(dueOffsetDays) : null,
-        estimateMin
+        estimateMin,
+        startTime: tp ? tp.startText : null
       };
     });
+  },
+  parseTimePart(p) {
+    const merRe = /(上午|下午|晚上|中午|凌晨)\s*$/;
+    const m1 = p.match(/(上午|下午|晚上|中午|凌晨)?(\d{1,2})\s*[:：点时]\s*(\d{0,2})(半)?\s*[-~至到]\s*(上午|下午|晚上|中午)?(\d{1,2})\s*[:：点时]\s*(\d{0,2})(半)?/);
+    if (m1) {
+      const pre1 = p.slice(0, m1.index).match(merRe);
+      const mer1 = m1[1] || (pre1 ? pre1[1] : null);
+      const mer2 = m1[5] || mer1;
+      const sh = RULES.normHour(parseInt(m1[2]), mer1);
+      const eh = RULES.normHour(parseInt(m1[6]), mer2);
+      const sm = sh * 60 + (m1[4] ? 30 : parseInt(m1[3] || "0") || 0);
+      const em = eh * 60 + (m1[8] ? 30 : parseInt(m1[7] || "0") || 0);
+      if (em > sm) return { startText: UTILS.fmtMin(sm), estimateMin: em - sm, today: true };
+    }
+    const m2 = p.match(/(上午|下午|晚上|中午|凌晨)?(\d{1,2})\s*[:：点时]\s*(\d{0,2})(半)?/);
+    if (m2) {
+      const pre2 = p.slice(0, m2.index).match(merRe);
+      const mer = m2[1] || (pre2 ? pre2[1] : null);
+      const h = RULES.normHour(parseInt(m2[2]), mer);
+      const mm = h * 60 + (m2[4] ? 30 : parseInt(m2[3] || "0") || 0);
+      return { startText: UTILS.fmtMin(mm), estimateMin: null, today: true };
+    }
+    return null;
+  },
+  normHour(h, mer) {
+    if (mer === "下午" || mer === "晚上") return h < 12 ? h + 12 : h;
+    if (mer === "中午") return h < 12 ? 12 : h;
+    if (mer === "凌晨") return h >= 12 ? h - 12 : h;
+    return h;
   },
   // 智能拆解：基于目标文本生成子任务
   splitProject(goal, opts = {}) {
@@ -915,9 +1080,31 @@ const RENDER = {
   },
   sidebar() {
     const data = STORE.get();
-    const quickCount = data.tasks.filter(t => !t.projectId && t.status !== "done").length;
+    const today = UTILS.today(0);
+    const quickCount = data.tasks.filter(t => !t.projectId && t.status !== "done" && (!t.dueDate || t.dueDate === today)).length;
     document.getElementById("quickCount").textContent = quickCount;
     document.getElementById("memCount").textContent = data.preferences.length;
+    const futureTasks = data.tasks.filter(t => !t.projectId && t.status !== "done" && t.dueDate && t.dueDate > today);
+    const fbl = document.getElementById("futureBadgeList");
+    if (fbl) {
+      if (futureTasks.length > 0) {
+        fbl.innerHTML = `<button class="sidebar-item text-xs text-stone-400 pl-6" id="btnGotoFuture">
+          <i class="fa-solid fa-calendar-week"></i><span>未来 ${futureTasks.length} 项</span>
+        </button>`;
+        const btn = document.getElementById("btnGotoFuture");
+        if (btn) btn.addEventListener("click", () => {
+          STATE.currentMode = "quick";
+          RENDER.all();
+          const drawer = document.getElementById("futureDrawer");
+          if (drawer) {
+            drawer.open = true;
+            drawer.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      } else {
+        fbl.innerHTML = "";
+      }
+    }
     const pl = document.getElementById("projectList");
     pl.innerHTML = data.projects.map(p => {
       const taskCount = data.tasks.filter(t => t.projectId === p.id && t.status !== "done").length;
@@ -946,25 +1133,57 @@ const RENDER = {
   },
   quickView() {
     const data = STORE.get();
-    const tasks = data.tasks.filter(t => !t.projectId).sort((a, b) => {
-      // 未完成在前，已完成在后；未完成按 order/dueDate
-      if (a.status === "done" && b.status !== "done") return 1;
-      if (a.status !== "done" && b.status === "done") return -1;
-      return (a.order || 0) - (b.order || 0);
-    });
+    const remindOn = STATE.settings.remindEnabled;
     return `
       <div class="max-w-3xl mx-auto">
-        <div class="mb-4">
-          <h1 class="text-xl font-semibold">琐事收集</h1>
-          <div class="text-xs text-stone-500 mt-1">快速记录临时蹦出来的事 / 灵感 / 待办</div>
+        <div class="mb-3 flex items-center gap-2">
+          <div>
+            <h1 class="text-xl font-semibold">今日计划</h1>
+            <div class="text-xs text-stone-500 mt-0.5">早上把一天的事丢进来，FlowMate 帮你排时间、提前提醒</div>
+          </div>
+          <div class="ml-auto text-xs ${remindOn ? "text-emerald-600" : "text-stone-400"}" id="remindStatus">
+            ${remindOn ? `<i class="fa-solid fa-bell"></i> 提醒已开启 · 提前 ${STATE.settings.remindLeadMin} 分钟` : `<i class="fa-solid fa-bell-slash"></i> 提醒已关闭（设置里开启）`}
+          </div>
         </div>
+        ${RENDER.todayTimeline(data)}
         ${RENDER.smartInputHTML("quick")}
         <div id="appliedPrefsBanner"></div>
-        <div class="mt-4 space-y-2" id="taskList">
-          ${tasks.length === 0 ? `<div class="empty-state"><i class="fa-solid fa-inbox text-3xl mb-2 block"></i>暂无琐事，在上面输入或上传图片</div>` : tasks.map(RENDER.taskCard).join("")}
-        </div>
+        ${RENDER.futureDrawer(data)}
+        ${RENDER.allCollected(data)}
       </div>
     `;
+  },
+  todayTimeline(data) {
+    const today = UTILS.today(0);
+    const items = data.tasks.filter(t => !t.projectId && t.status !== "done" && (t.dueDate === today || !t.dueDate));
+    const scheduled = items.filter(t => t.startTime).sort((a, b) => (UTILS.toMin(a.startTime) || 0) - (UTILS.toMin(b.startTime) || 0));
+    const unscheduled = items.filter(t => !t.startTime);
+    const estText = m => m ? (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? " " + (m % 60) + "m" : ""}` : `${m}m`) : "";
+    const prioColor = { high: "text-red-500", medium: "text-amber-500", low: "text-stone-400" };
+    const row = t => {
+      const s = UTILS.toMin(t.startTime);
+      const e = s != null ? s + (t.estimateMin || 30) : null;
+      const timeText = s != null ? (e != null ? `${t.startTime}-${UTILS.fmtMin(e)}` : t.startTime) : "";
+      return `<div class="flex items-center gap-3 py-1" data-task="${t.id}">
+        <div class="w-28 text-right text-xs font-medium ${s != null ? "text-stone-600" : "text-stone-300"}">${s != null ? timeText : "待排程"}</div>
+        <div class="flex-1 min-w-0 h-8 rounded flex items-center px-3 text-sm ${s != null ? "bg-indigo-50 text-stone-700" : "border border-dashed border-stone-300 text-stone-500"}">
+          <span class="truncate">${UTILS.escapeHtml(t.title)}</span>
+          ${t.estimateMin ? `<span class="ml-2 text-xs text-stone-400 shrink-0">${estText(t.estimateMin)}</span>` : ""}
+          <i class="fa-solid fa-flag ml-2 text-xs ${prioColor[t.priority] || "text-stone-400"} shrink-0"></i>
+        </div>
+        <button class="icon-btn shrink-0" data-act="task-edit" data-id="${t.id}" title="编辑时间"><i class="fa-solid fa-pen text-xs text-indigo-400"></i></button>
+      </div>`;
+    };
+    return `<div class="surface rounded-lg p-3 mb-3">
+      <div class="flex items-center gap-2 mb-2">
+        <i class="fa-solid fa-calendar-day text-indigo-500"></i>
+        <span class="font-semibold text-sm">${UTILS.todayLabel()} · 今日安排</span>
+        <span class="tag">${items.length} 项</span>
+        <button class="btn btn-primary btn-sm ml-auto" id="btnScheduleToday"><i class="fa-solid fa-wand-magic-sparkles"></i>一键智能排程</button>
+      </div>
+      ${items.length === 0 ? `<div class="text-xs text-stone-400 py-3 text-center">今天还没有安排，把今天要做的事丢进输入框吧（如：9点-11点复习高数、下午2点买牛奶）</div>`
+        : `<div class="space-y-0.5">${scheduled.map(row).join("")}${unscheduled.length ? `<div class="mt-2 pt-2 border-t border-dashed border-stone-200 text-xs text-stone-400">未排期（点 ⚡ 一键排程自动分配时间）</div>${unscheduled.map(row).join("")}` : ""}</div>`}
+    </div>`;
   },
   projectView() {
     const data = STORE.get();
@@ -1025,6 +1244,15 @@ const RENDER = {
     const proj = data.projects.find(p => p.id === t.projectId);
     const fc = t.feedback === "up" ? "feedback-up" : t.feedback === "down" ? "feedback-down" : "";
     const estText = t.estimateMin ? (t.estimateMin >= 60 ? `${Math.floor(t.estimateMin / 60)}h${t.estimateMin % 60 ? " " + (t.estimateMin % 60) + "m" : ""}` : `${t.estimateMin}m`) : "";
+    // 完成态的扩展标签（24h 划线保留 + 完成时间 + 距清理多久）
+    let doneBadge = "";
+    if (t.status === "done" && t.completedAt) {
+      const h = UTILS.hoursAgo(t.completedAt);
+      const hm = h < 1 ? "刚刚" : `${h}h 前`;
+      doneBadge = `<span class="tag tag-time text-emerald-600" title="24h 后自动清理"><i class="fa-solid fa-check-double"></i>${hm}完成</span>`;
+    } else if (t.status === "done" && !t.completedAt) {
+      doneBadge = `<span class="tag text-stone-400" title="老数据,长期保留"><i class="fa-solid fa-check"></i>已完成</span>`;
+    }
     return `<div class="task-card surface rounded-lg p-3 ${fc}" draggable="true" data-task="${t.id}">
       <div class="flex items-start gap-2">
         <button class="drag-handle icon-btn" data-act="toggle-done" data-id="${t.id}">
@@ -1034,9 +1262,12 @@ const RENDER = {
           <div class="text-sm ${t.status === "done" ? "line-through text-stone-400" : ""}">${UTILS.escapeHtml(t.title)}</div>
           <div class="flex flex-wrap gap-1 mt-1 text-xs">
             <span class="priority-${t.priority}"><i class="fa-solid fa-flag"></i> ${({high:"高",medium:"中",low:"低"})[t.priority]}</span>
+            ${t.startTime ? `<span class="tag tag-time"><i class="fa-regular fa-clock"></i>${t.startTime}</span>` : ""}
             ${t.dueDate ? `<span class="tag"><i class="fa-regular fa-calendar"></i>${t.dueDate}</span>` : ""}
-            ${estText ? `<span class="tag"><i class="fa-regular fa-clock"></i>${estText}</span>` : ""}
+            ${estText ? `<span class="tag"><i class="fa-regular fa-hourglass-half"></i>${estText}</span>` : ""}
+            ${doneBadge}
             ${proj ? `<span class="tag" style="color:${proj.color}"><i class="fa-solid ${proj.icon}"></i>${UTILS.escapeHtml(proj.name)}</span>` : ""}
+            ${t.carryOver ? '<span class="tag-accent tag" title="从过期顺延过来的">🎯 顺延</span>' : ""}
             ${t.source === "split" ? '<span class="tag-accent tag">拆解</span>' : ""}
             ${t.source === "vision" ? '<span class="tag-accent tag">视觉</span>' : ""}
           </div>
@@ -1056,12 +1287,100 @@ const RENDER = {
       </div>
     </div>`;
   },
+  taskCardCompact(t) {
+    const prioColor = { high: "text-red-500", medium: "text-amber-500", low: "text-stone-400" };
+    return `<div class="flex items-center gap-2 px-3 py-1.5 surface-2 rounded text-xs" data-task="${t.id}">
+      <i class="fa-solid fa-flag ${prioColor[t.priority] || "text-stone-400"} text-[10px]"></i>
+      <span class="truncate flex-1">${UTILS.escapeHtml(t.title)}</span>
+      ${t.startTime ? `<span class="text-stone-500 shrink-0"><i class="fa-regular fa-clock"></i> ${t.startTime}</span>` : ""}
+      <button class="icon-btn shrink-0" data-act="task-edit" data-id="${t.id}" title="编辑"><i class="fa-solid fa-pen text-xs text-indigo-400"></i></button>
+    </div>`;
+  },
+  futureDrawer(data) {
+    const today = UTILS.today(0);
+    const undone = data.tasks.filter(t => !t.projectId && t.status !== "done" && t.dueDate && t.dueDate > today);
+    if (undone.length === 0) return "";
+    const map = {};
+    undone.forEach(t => { (map[t.dueDate] = map[t.dueDate] || []).push(t); });
+    const dates = Object.keys(map).sort();
+    const groups = dates.map(d => ({
+      date: d,
+      label: UTILS.dateLabel(d, today),
+      tasks: map[d].slice().sort((a, b) => (UTILS.toMin(a.startTime || "23:59") || 9999) - (UTILS.toMin(b.startTime || "23:59") || 9999))
+    }));
+    return `<details id="futureDrawer" class="surface rounded-lg p-3 mb-3">
+      <summary class="cursor-pointer flex items-center gap-2 text-sm list-none">
+        <i class="fa-solid fa-calendar-week text-stone-500"></i>
+        <span class="font-medium">未来事项</span>
+        <span class="tag">${undone.length} 项</span>
+        <i class="fa-solid fa-chevron-down text-xs text-stone-400 ml-auto transition-transform"></i>
+      </summary>
+      <div class="mt-3 space-y-3">
+        ${groups.map(g => `
+          <div>
+            <div class="text-xs font-medium text-stone-500 mb-1.5"><i class="fa-solid fa-circle text-[6px] mr-1.5 align-middle"></i>${UTILS.escapeHtml(g.label)} <span class="text-stone-400">（${g.tasks.length}）</span></div>
+            <div class="space-y-1">${g.tasks.map(RENDER.taskCardCompact).join("")}</div>
+          </div>
+        `).join("")}
+      </div>
+    </details>`;
+  },
+  allCollected(data) {
+    const all = data.tasks.filter(t => !t.projectId);
+    if (all.length === 0) {
+      return `<div class="mt-4 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-stone-600">全部收集</h2>
+          <span class="text-xs text-stone-400">0 项</span>
+        </div>
+        <div class="mt-2 surface rounded-lg p-6 text-center">
+          <div class="empty-state"><i class="fa-solid fa-inbox text-3xl mb-2 block"></i>暂无琐事，在上面输入或上传图片</div>
+        </div>`;
+    }
+    const today = UTILS.today(0);
+    const sortKey = t => {
+      if (t.status === "done") return `2|9999-99-99|${(t.order || 0)}`;
+      const date = t.dueDate || "9999-99-98";
+      return `1|${date}|${(t.order || 0)}`;
+    };
+    const sorted = all.slice().sort((a, b) => {
+      const ka = sortKey(a), kb = sortKey(b);
+      if (ka < kb) return -1;
+      if (ka > kb) return 1;
+      return 0;
+    });
+    const groups = [];
+    let curKey = null;
+    sorted.forEach(t => {
+      const dateKey = t.status === "done" ? "_done" : (t.dueDate || "_nodate");
+      if (dateKey !== curKey) {
+        let label;
+        if (dateKey === "_done") label = "✅ 已完成";
+        else if (dateKey === "_nodate") label = "📦 未安排日期";
+        else label = "📅 " + UTILS.dateLabel(dateKey, today);
+        groups.push({ key: dateKey, label, tasks: [] });
+        curKey = dateKey;
+      }
+      groups[groups.length - 1].tasks.push(t);
+    });
+    return `<div class="mt-4 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-stone-600">全部收集</h2>
+        <span class="text-xs text-stone-400">${all.length} 项</span>
+      </div>
+      <div class="mt-2 space-y-3" id="taskList">
+        ${groups.map(g => `
+          <div>
+            <div class="text-xs font-medium text-stone-500 mb-1.5 px-1">${UTILS.escapeHtml(g.label)} <span class="text-stone-400">（${g.tasks.length}）</span></div>
+            <div class="space-y-1">${g.tasks.map(RENDER.taskCard).join("")}</div>
+          </div>
+        `).join("")}
+      </div>`;
+  },
   smartInputHTML(scope) {
     return `<div class="surface rounded-lg p-3 mb-2" id="smartInput">
       <div class="flex items-start gap-2">
         <i class="fa-solid fa-sparkles text-indigo-500 mt-2"></i>
         <div class="flex-1">
-          <textarea class="textarea border-0 p-0 focus:ring-0" id="inputText" placeholder="${scope === "quick" ? "把临时蹦出的事快速丢进来…  如：周三前回复张三邮件、买牛奶、整理桌面" : "把项目目标描述一下…  如：准备期末考试，重点复习高数和英语，两周后考"}" rows="1"></textarea>
+          <textarea class="textarea border-0 p-0 focus:ring-0" id="inputText" placeholder="${scope === "quick" ? "把今天的事都丢进来…  如：9点-11点复习高数、下午2点买牛奶、晚上7点健身、整理书桌" : "把项目目标描述一下…  如：准备期末考试，重点复习高数和英语，两周后考"}" rows="1"></textarea>
         </div>
         <div class="flex gap-1">
           <button class="icon-btn" id="btnPickImage" title="上传图片识别"><i class="fa-regular fa-image"></i></button>
@@ -1161,6 +1480,10 @@ const RENDER = {
     });
     if (btnVoice) btnVoice.addEventListener("click", EVENTS.handleVoice);
 
+    // 今日计划：一键智能排程
+    const btnSchedule = document.getElementById("btnScheduleToday");
+    if (btnSchedule) btnSchedule.addEventListener("click", EVENTS.handleScheduleToday);
+
     // 任务操作
     document.querySelectorAll("[data-task]").forEach(card => {
       const id = card.dataset.task;
@@ -1227,6 +1550,7 @@ const EVENTS = {
             priority: t.priority || "medium",
             dueDate: t.dueDate || null,
             estimateMin: t.estimateMin || 30,
+            startTime: t.startTime || null,
             order: data.tasks.length + i,
             source: "input",
             feedback: "none",
@@ -1252,7 +1576,7 @@ const EVENTS = {
     preview.innerHTML = `<div class="surface-2 rounded p-2 mt-2 fade-in">
       <div class="text-xs text-stone-500 mb-2">AI 解析出 ${tasks.length} 个任务，可编辑后确认</div>
       <div class="space-y-1">${tasks.map((t, i) => `
-        <div class="flex items-center gap-2 text-xs" data-parse-row="${i}">
+        <div class="flex items-center gap-2 text-xs" data-parse-row="${i}" data-start="${t.startTime || ""}" data-est="${t.estimateMin || ""}" data-due="${t.dueDate || ""}">
           <input class="input flex-1" value="${UTILS.escapeHtml(t.title)}" data-field="title">
           <select class="select w-20" data-field="priority">
             <option value="high" ${t.priority === "high" ? "selected" : ""}>高</option>
@@ -1283,7 +1607,16 @@ const EVENTS = {
       rows.forEach(row => {
         const title = row.querySelector('[data-field="title"]').value.trim();
         const priority = row.querySelector('[data-field="priority"]').value;
-        if (title) confirmed.push({ title, priority });
+        if (!title) return;
+        // 保留解析出的时间信息；若用户编辑了标题，则对标题二次解析（新时间优先）
+        const rep = RULES.parseTimePart(title);
+        confirmed.push({
+          title,
+          priority,
+          startTime: (rep && rep.startText) || row.dataset.start || null,
+          estimateMin: (rep && rep.estimateMin) || parseInt(row.dataset.est) || 30,
+          dueDate: row.dataset.due || null
+        });
       });
       if (confirmed.length === 0) { preview.classList.add("hidden"); return; }
       onConfirm(confirmed);
@@ -1308,6 +1641,7 @@ const EVENTS = {
             priority: t.priority || "medium",
             dueDate: t.dueDate || null,
             estimateMin: t.estimateMin || 30,
+            startTime: t.startTime || null,
             order: data.tasks.length + i,
             source: "vision",
             feedback: "none",
@@ -1376,8 +1710,19 @@ const EVENTS = {
   toggleDone(id) {
     const t = STORE.get().tasks.find(x => x.id === id);
     if (!t) return;
-    t.status = t.status === "done" ? "todo" : "done";
+    if (t.status === "done") {
+      // 反标回未完成 → 清掉时间戳
+      t.status = "todo";
+      t.completedAt = null;
+      t.sweepAt = null;
+    } else {
+      // 标记完成 → 写时间戳 + 预定的清理时间（24h 后）
+      t.status = "done";
+      t.completedAt = UTILS.now();
+      t.sweepAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    }
     t.updatedAt = UTILS.now();
+    STATE.logMemory({ type: t.status === "done" ? "complete" : "reopen", taskId: id, title: t.title });
     STORE.save(); RENDER.all();
   },
   deleteTask(id) {
@@ -1387,6 +1732,133 @@ const EVENTS = {
       STORE.save(); RENDER.all();
       UTILS.toast("已删除", "success");
     });
+  },
+
+  /* ========== 每日回顾（overdue review） ========== */
+  /**
+   * 应用启动 + 每次 REMINDER 心跳时调用
+   * 一天只主动弹一次，关闭/稍后都不影响第二天再问
+   */
+  handleOverdueCheck() {
+    const data = STORE.get();
+    const todayStr = UTILS.today(0);
+    // 今天已经问过 → 跳过
+    if (data.settings.lastOverdueCheckDate === todayStr) return;
+    const overdue = data.tasks.filter(t => UTILS.isOverdue(t));
+    // 即便没有过期任务也要记录今天已问过，避免每次心跳都重算
+    data.settings.lastOverdueCheckDate = todayStr;
+    data.settings.lastOverdueCheckAt = UTILS.now();
+    STORE.save();
+    if (overdue.length === 0) return;
+    EVENTS.openOverdueModal(overdue);
+  },
+
+  /**
+   * 渲染每日回顾 modal：每个过期任务一行 + 三个按钮
+   */
+  openOverdueModal(tasks) {
+    const list = document.getElementById("overdueList");
+    document.getElementById("overdueCount").textContent = tasks.length;
+    list.innerHTML = tasks.map(t => {
+      const dateLbl = UTILS.dateLabel(t.dueDate);
+      const estLbl = t.estimateMin ? ` · ⏱ ${UTILS.fmtMin(t.estimateMin)}` : "";
+      const priLbl = { high: "🔴 高", medium: "🟡 中", low: "⚪ 低" }[t.priority] || "";
+      return `
+        <div class="surface-2 rounded-lg p-3 mb-2 fade-in" data-overdue-id="${t.id}">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium truncate">${UTILS.escapeHtml(t.title)}</div>
+              <div class="text-xs text-stone-500 mt-0.5">${dateLbl}${estLbl} ${priLbl}</div>
+            </div>
+            <button class="icon-btn" data-overdue-act="del" data-id="${t.id}" title="不要了,直接删"><i class="fa-solid fa-trash text-xs text-stone-400"></i></button>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button class="btn btn-primary flex-1" data-overdue-act="done" data-id="${t.id}"><i class="fa-solid fa-check"></i>已办完</button>
+            <button class="btn flex-1" data-overdue-act="carry" data-id="${t.id}"><i class="fa-solid fa-arrow-right"></i>推明天</button>
+            <button class="btn flex-1" data-overdue-act="delay" data-id="${t.id}"><i class="fa-solid fa-calendar"></i>改天…</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+    UTILS.showModal("overdueModal");
+  },
+
+  /**
+   * 处理单个任务的决策
+   * @param {string} id
+   * @param {"done"|"carry"|"delay"|"del"} action
+   * @param {{targetDate?: string, fromDate?: string}} [payload]
+   */
+  decideOverdue(id, action, payload) {
+    const data = STORE.get();
+    const t = data.tasks.find(x => x.id === id);
+    if (!t) return;
+    const fromDate = t.dueDate;
+
+    if (action === "done") {
+      // 标记完成 → 触发 toggleDone 写时间戳
+      EVENTS.toggleDone(id);
+      UTILS.toast(`「${t.title}」已办完,24h后清理`, "success");
+    } else if (action === "carry" || action === "delay") {
+      let targetDate = payload?.targetDate;
+      if (!targetDate) targetDate = UTILS.addDays(UTILS.today(0), 1); // 默认明天
+      t.dueDate = targetDate;
+      t.startTime = null; // 旧的开始时间已过期,清掉避免冲突
+      t.carryOver = true;
+      t.updatedAt = UTILS.now();
+      STATE.logMemory({
+        type: "carry-over",
+        taskId: id,
+        title: t.title,
+        fromDate,
+        toDate: targetDate
+      });
+      STORE.save();
+      UTILS.toast(`「${t.title}」已顺延到 ${UTILS.dateLabel(targetDate)}`, "success");
+    } else if (action === "del") {
+      EVENTS.deleteTask(id);
+      UTILS.toast(`「${t.title}」已删除`, "success");
+    }
+
+    // 该行从 modal 移除
+    document.querySelector(`[data-overdue-id="${id}"]`)?.remove();
+    // 重新计数
+    const remaining = document.querySelectorAll("[data-overdue-id]").length;
+    document.getElementById("overdueCount").textContent = remaining;
+    // 如果决策完一个后剩余 0,自动关闭 modal
+    if (remaining === 0) UTILS.hideModal("overdueModal");
+    // 顺便刷一下主视图
+    RENDER.all();
+  },
+
+  /**
+   * 改天：弹一个 prompt 让用户输入日期（复用了 RULES.parseTasks 的自然语言解析）
+   */
+  openDelayPicker(id) {
+    const val = prompt("改到哪天？可填：明天/大后天/9月1日/下周/2026-09-15", "");
+    if (!val) return;
+    const r = RULES.parseTasks(val);
+    if (!r || r.length === 0 || !r[0].dueDate) {
+      UTILS.toast("日期没认出来,再试试", "error");
+      return;
+    }
+    EVENTS.decideOverdue(id, "delay", { targetDate: r[0].dueDate, fromDate: undefined });
+  },
+
+  /**
+   * 批量：全部已办完
+   */
+  overdueBulkDone() {
+    const ids = Array.from(document.querySelectorAll("[data-overdue-id]")).map(el => el.dataset.overdueId);
+    ids.forEach(id => EVENTS.decideOverdue(id, "done"));
+  },
+
+  /**
+   * 批量：全部推到明天
+   */
+  overdueBulkCarry() {
+    const ids = Array.from(document.querySelectorAll("[data-overdue-id]")).map(el => el.dataset.overdueId);
+    ids.forEach(id => EVENTS.decideOverdue(id, "carry"));
   },
   moveTask(id, delta) {
     const data = STORE.get();
@@ -1409,6 +1881,7 @@ const EVENTS = {
     document.getElementById("editTaskPriority").value = t.priority || "medium";
     document.getElementById("editTaskEstimate").value = t.estimateMin || "";
     document.getElementById("editTaskDueDate").value = t.dueDate || "";
+    document.getElementById("editTaskStart").value = t.startTime || "";
     UTILS.showModal("taskEditModal");
     setTimeout(() => document.getElementById("editTaskTitle").focus(), 50);
   },
@@ -1419,20 +1892,65 @@ const EVENTS = {
     if (!t) return;
     const title = document.getElementById("editTaskTitle").value.trim();
     if (!title) { UTILS.toast("任务内容不能为空", "warning"); return; }
-    const prevDue = t.dueDate, prevEst = t.estimateMin, prevPrio = t.priority;
+    const prevDue = t.dueDate, prevEst = t.estimateMin, prevPrio = t.priority, prevStart = t.startTime;
     t.title = title;
     t.priority = document.getElementById("editTaskPriority").value;
     t.estimateMin = parseInt(document.getElementById("editTaskEstimate").value, 10) || null;
     t.dueDate = document.getElementById("editTaskDueDate").value || null;
+    t.startTime = document.getElementById("editTaskStart").value || null;
     t.updatedAt = UTILS.now();
     const changes = [];
     if ((t.dueDate || null) !== (prevDue || null)) changes.push(`截止 ${prevDue || "无"} → ${t.dueDate || "无"}`);
     if ((t.estimateMin || null) !== (prevEst || null)) changes.push(`预估 ${prevEst || 0} → ${t.estimateMin || 0} 分钟`);
     if (t.priority !== prevPrio) changes.push(`优先级 ${prevPrio} → ${t.priority}`);
+    if ((t.startTime || null) !== (prevStart || null)) changes.push(`开始 ${prevStart || "未排"} → ${t.startTime || "未排"}`);
     if (changes.length) STATE.logMemory("feedback", "update", null, `✏️ 手动编辑: ${t.title.slice(0, 16)}（${changes.join("；")}）`);
     STORE.save(); RENDER.all();
     UTILS.hideModal("taskEditModal");
     UTILS.toast("已保存", "success");
+  },
+  handleScheduleToday() {
+    const data = STORE.get();
+    const today = UTILS.today(0);
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const prioRank = { high: 0, medium: 1, low: 2 };
+    const candidates = data.tasks.filter(t => !t.projectId && t.status !== "done" && (!t.dueDate || t.dueDate === today));
+    if (candidates.length === 0) { UTILS.toast("先把今天的事丢进来再排程", "warning"); return; }
+    const occupied = [];
+    const unscheduled = [];
+    for (const t of candidates) {
+      const s = UTILS.toMin(t.startTime);
+      if (s != null) occupied.push({ s, e: s + (t.estimateMin || 30), id: t.id });
+      else unscheduled.push(t);
+    }
+    if (unscheduled.length === 0) { UTILS.toast("所有任务都已排好时间了", "success"); return; }
+    unscheduled.sort((a, b) => (prioRank[a.priority] - prioRank[b.priority]) || ((b.estimateMin || 30) - (a.estimateMin || 30)));
+    // 从 8:00（或现在+15 分钟）开始，贪心找空闲槽位
+    let cursor = Math.max(8 * 60, nowMin + 15);
+    const assigned = [];
+    for (const t of unscheduled) {
+      const est = t.estimateMin || 30;
+      let start = cursor;
+      let guard = 0;
+      while (guard++ < 48) {
+        const clash = occupied.find(o => !(start + est <= o.s || start >= o.e));
+        if (!clash) break;
+        start = clash.e + 10;
+      }
+      const end = start + est;
+      occupied.push({ s: start, e: end, id: t.id });
+      t.startTime = UTILS.fmtMin(start);
+      t.dueDate = today;
+      t.updatedAt = UTILS.now();
+      assigned.push(`${UTILS.fmtMin(start)} ${t.title.slice(0, 12)}`);
+      cursor = end + 10;
+    }
+    STORE.save();
+    STATE.logMemory("ai_applied", "apply", null, `⚡ 智能排程: 为 ${assigned.length} 个任务分配时间段（${assigned.join("；")}）`);
+    RENDER.all();
+    UTILS.toast(`已为 ${assigned.length} 个任务排好时间`, "success");
+    REMINDER.requestPermission();
   },
   openFeedbackModal(taskId) {
     STATE.pendingFeedbackTaskId = taskId;
@@ -1560,6 +2078,7 @@ const EVENTS = {
       priority: "medium",
       dueDate: null,
       estimateMin: 30,
+      startTime: null,
       order: data.tasks.length,
       source: "manual",
       feedback: "none",
@@ -1664,10 +2183,16 @@ const EVENTS = {
       const data = {
         version: 1,
         tasks: [
-          // 琐事
-          { id: UTILS.id("t"), title: "回复张三的邮件", projectId: null, status: "todo", priority: "high", dueDate: UTILS.today(0), estimateMin: 15, order: 0, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
-          { id: UTILS.id("t"), title: "买牛奶和鸡蛋", projectId: null, status: "todo", priority: "medium", dueDate: UTILS.today(1), estimateMin: 20, order: 1, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
-          { id: UTILS.id("t"), title: "整理书桌", projectId: null, status: "done", priority: "low", dueDate: null, estimateMin: 30, order: 2, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          // 今日计划（琐事 + 时间）
+          { id: UTILS.id("t"), title: "晨跑 3 公里", projectId: null, status: "todo", priority: "low", dueDate: UTILS.today(0), estimateMin: 30, startTime: "08:00", order: 0, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "复习高数第 1 章", projectId: null, status: "todo", priority: "high", dueDate: UTILS.today(0), estimateMin: 120, startTime: "09:00", order: 1, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "回复张三的邮件", projectId: null, status: "todo", priority: "high", dueDate: UTILS.today(0), estimateMin: 15, order: 2, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "买牛奶和鸡蛋", projectId: null, status: "todo", priority: "medium", dueDate: UTILS.today(0), estimateMin: 20, order: 3, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "晚上 7 点健身 1 小时", projectId: null, status: "todo", priority: "low", dueDate: UTILS.today(0), estimateMin: 60, startTime: "19:00", order: 4, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "整理书桌", projectId: null, status: "done", priority: "low", dueDate: null, estimateMin: 30, order: 5, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          // === 过期任务（让用户首次加载体验"每日回顾"modal）===
+          { id: UTILS.id("t"), title: "去医院复查", projectId: null, status: "todo", priority: "high", dueDate: UTILS.today(-1), estimateMin: 90, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
+          { id: UTILS.id("t"), title: "寄快递给妈妈", projectId: null, status: "todo", priority: "medium", dueDate: UTILS.today(-2), estimateMin: 30, source: "input", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
           // 期末项目
           { id: UTILS.id("t"), title: "梳理考试范围", projectId: "p_demo_exam", status: "done", priority: "high", dueDate: UTILS.today(-2), estimateMin: 60, order: 0, source: "split", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
           { id: UTILS.id("t"), title: "复习高数第 1 章", projectId: "p_demo_exam", status: "doing", priority: "high", dueDate: UTILS.today(1), estimateMin: 120, order: 0, source: "split", feedback: "none", createdAt: UTILS.now(), updatedAt: UTILS.now() },
@@ -1700,6 +2225,62 @@ const EVENTS = {
   }
 };
 
+/* ========== REMINDER (提醒引擎) ========== */
+const REMINDER = {
+  notified: new Set(),
+  timer: null,
+  init() {
+    this.check();
+    this.timer = setInterval(() => { this.check(); STORE.sweepCompleted(); }, 30000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { this.check(); STORE.sweepCompleted(); } });
+  },
+  requestPermission() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") Notification.requestPermission();
+  },
+  check() {
+    const s = STATE.settings;
+    if (!s.remindEnabled) { document.title = "FlowMate"; return; }
+    const data = STORE.get();
+    const now = new Date();
+    const today = UTILS.today(0);
+    const leadMin = s.remindLeadMin || 20;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let next = null;
+    for (const t of data.tasks) {
+      if (t.status === "done" || !t.startTime || t.dueDate !== today) continue;
+      const startMin = UTILS.toMin(t.startTime);
+      if (startMin == null) continue;
+      const diff = startMin - nowMin;
+      if (diff < 0) continue;
+      if (next == null || diff < next.diff) next = { title: t.title, startMin, diff, id: t.id };
+      if (diff <= leadMin && !this.notified.has(t.id)) {
+        this.notified.add(t.id);
+        this.notify(t.title, t.startTime, diff);
+      }
+    }
+    if (next && next.diff <= 120) document.title = `⏰ ${next.title} 还有 ${next.diff} 分钟 · FlowMate`;
+    else document.title = "FlowMate";
+  },
+  notify(title, startTime, diff) {
+    const banner = document.getElementById("remindBanner");
+    if (banner) {
+      banner.classList.remove("hidden");
+      banner.innerHTML = `<i class="fa-solid fa-bell"></i><span><b>${UTILS.escapeHtml(title)}</b> 于 ${startTime} 开始，还有 ${diff} 分钟</span><button class="ml-auto text-xs font-medium hover:underline shrink-0" id="btnDismissRemind">知道了</button>`;
+      const btn = document.getElementById("btnDismissRemind");
+      if (btn) btn.onclick = () => banner.classList.add("hidden");
+    }
+    UTILS.toast(`⏰ ${diff} 分钟后：${title}（${startTime}）`, "warning", 4500);
+    if ("Notification" in window && Notification.permission === "granted") {
+      try { new Notification("⏰ FlowMate 提醒", { body: `${title} 将于 ${startTime} 开始，还有 ${diff} 分钟` }); } catch (e) {}
+    }
+  },
+  test() {
+    const diff = STATE.settings.remindLeadMin || 20;
+    this.notify("这是一条测试提醒", "现在", diff);
+  }
+};
+
 /* ========== APP ========== */
 const APP = {
   init() {
@@ -1710,8 +2291,12 @@ const APP = {
     RENDER.all();
     // 绑定全局事件
     this.bindGlobal();
+    // 启动提醒引擎（30s 心跳已复用挂 sweepCompleted）
+    REMINDER.init();
     // 检测分享链接
     this.checkShareLink();
+    // 每日过期回顾：启动后延迟 800ms 弹窗（先让首页 UI 渲染完）
+    setTimeout(() => { EVENTS.handleOverdueCheck(); STORE.sweepCompleted(); }, 800);
   },
   bindGlobal() {
     // 模式切换
@@ -1761,6 +2346,10 @@ const APP = {
       document.getElementById("setApiKey").value = STATE.settings.deepseek.apiKey || "";
       document.getElementById("setTextModel").value = STATE.settings.deepseek.textModel || "";
       document.getElementById("setVisionModel").value = STATE.settings.deepseek.visionModel || "";
+      const setRem = document.getElementById("setRemindEnabled");
+      const setLead = document.getElementById("setRemindLead");
+      if (setRem) setRem.checked = !!STATE.settings.remindEnabled;
+      if (setLead) setLead.value = STATE.settings.remindLeadMin || 20;
       UTILS.showModal("settingsModal");
     });
     document.getElementById("btnApiKeySave") || document.querySelectorAll('[data-close-modal="settingsModal"]').forEach(b => {
@@ -1772,10 +2361,41 @@ const APP = {
         UTILS.toast("设置已保存", "success");
       });
     });
+    // 提醒设置（即时保存）
+    const setRem = document.getElementById("setRemindEnabled");
+    if (setRem) setRem.addEventListener("change", () => {
+      STATE.settings.remindEnabled = setRem.checked;
+      STORE.save();
+      RENDER.all();
+      UTILS.toast(setRem.checked ? "提醒已开启" : "提醒已关闭", "success");
+      if (setRem.checked) REMINDER.requestPermission();
+    });
+    const setLead = document.getElementById("setRemindLead");
+    if (setLead) setLead.addEventListener("change", () => {
+      const v = parseInt(setLead.value, 10);
+      if (v >= 1 && v <= 240) { STATE.settings.remindLeadMin = v; STORE.save(); UTILS.toast(`已设为提前 ${v} 分钟提醒`, "success"); }
+    });
+    const btnTestRemind = document.getElementById("btnTestRemind");
+    if (btnTestRemind) btnTestRemind.addEventListener("click", () => {
+      REMINDER.requestPermission();
+      REMINDER.test();
+    });
     // 通用关闭按钮
     document.querySelectorAll("[data-close-modal]").forEach(b => {
       b.addEventListener("click", () => UTILS.hideModal(b.dataset.closeModal));
     });
+    // 每日回顾 modal 内的决策按钮（事件委托）
+    document.getElementById("overdueList").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-overdue-act]");
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const act = btn.dataset.overdueAct;
+      if (act === "delay") EVENTS.openDelayPicker(id);
+      else EVENTS.decideOverdue(id, act);
+    });
+    // 每日回顾 modal 的批量按钮
+    document.getElementById("btnOverdueAllDone").addEventListener("click", () => EVENTS.overdueBulkDone());
+    document.getElementById("btnOverdueAllCarry").addEventListener("click", () => EVENTS.overdueBulkCarry());
     // 新建项目
     document.getElementById("btnNewProject").addEventListener("click", () => EVENTS.newProject());
     // 分享
